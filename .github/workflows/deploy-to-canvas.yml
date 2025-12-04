@@ -1,0 +1,33 @@
+name: Deploy MkDocs a Canvas
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:  # para ejecutarlo manualmente
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install canvasapi beautifulsoup4
+
+      - name: Build MkDocs site
+        run: mkdocs build --clean
+
+      - name: Deploy to Canvas
+        env:
+          CANVAS_URL: ${{ secrets.CANVAS_URL }}
+          CANVAS_TOKEN: ${{ secrets.CANVAS_TOKEN }}
+          CANVAS_COURSE_ID: ${{ secrets.CANVAS_COURSE_ID }}
+        run: |
+          python .github/scripts/deploy_to_canvas.py
