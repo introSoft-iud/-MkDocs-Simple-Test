@@ -4,7 +4,6 @@ from canvasapi import Canvas
 from bs4 import BeautifulSoup
 from pathlib import Path
 
-# Configuración
 API_URL = os.environ["CANVAS_URL"]
 API_KEY = os.environ["CANVAS_TOKEN"]
 COURSE_ID = int(os.environ["CANVAS_COURSE_ID"])
@@ -15,40 +14,37 @@ course = canvas.get_course(COURSE_ID)
 site_dir = Path("site")
 pages_created = 0
 
-print("Eliminando páginas antiguas del sitio MkDocs (excepto la Front Page)...")
+print("1. Limpiando páginas antiguas [Docs] (excepto Front Page)...")
 for page in course.get_pages():
-    if page.title.startswith("[MkDocs]"):
-        # Si es la página de inicio del curso, la desmarcamos primero
+    if page.title.startswith("[Docs]"):
         if getattr(page, "front_page", False):
-            print(f"  Desmarcando Front Page: {page.title}")
             page.edit(wiki_page={"front_page": False})
-        print(f"  Eliminada: {page.title}")
         page.delete()
 
-print("\nSubiendo las nuevas páginas...")
-for html_file in site_dir.rglob("*.html"):
-    rel_path = html_file.relative_to(site_dir)
-    url_slug = str(rel_path.parent / html_file.stem).replace("\\", "/")
-    if url_slug == "index":
+print("\n2. Subiendo todas las páginas (incluidas las que están en subcarpetas)...\n")
+for html_file in site_dir.rglob("index.html"):  # ← ¡¡Aquí está el truco!!
+    rel_path = html_file.relative_to(site_dir).parent  # carpeta relativa
+    if rel_path == Path("."):
         url_slug = "inicio-mkdocs"
-
-    title = "[Docs] " + " → ".join(part.capitalize() for part in rel_path.parts[:-1] if part != "index")
-    if not title.strip("[Docs] "):
         title = "[Docs] Inicio"
+    else:
+        # Ejemplo: carpeta "temario/fisica" → título "[Docs] Temario → Fisica"
+        title_parts = [p.capitalize() for p in rel_path.parts]
+        title = "[Docs] " + " → ".join(title_parts)
+        url_slug = str(rel_path).replace("\\", "/")
 
     with open(html_file, encoding="utf-8") as f:
         body = f.read()
 
-    # Pequeña limpieza de rutas relativas (suficiente para Material + MathJax)
     soup = BeautifulSoup(body, "html.parser")
-    for tag in soup.find_all(["link", "script", "img"]):
+    # Corrección mínima de rutas para que CSS/JS/imágenes funcionen
+    for tag in soup.find_all(["link", "script", "img", "source"]):
         attr = "href" if tag.has_attr("href") else "src"
         if tag.get(attr) and not tag[attr].startswith(("http", "https", "#", "data:")):
-            tag[attr] = tag[attr].lstrip("./")
+            tag[attr] = "/" + str(rel_path / tag[attr].lstrip("./")).replace("\\", "/")
 
     body = str(soup)
 
-    # Crear o actualizar página
     try:
         page = course.create_page({
             "title": title,
@@ -57,16 +53,15 @@ for html_file in site_dir.rglob("*.html"):
             "url": url_slug,
             "front_page": (url_slug == "inicio-mkdocs")
         })
-        print(f"  ✓ {title}")
+        print(f"  ✓ {title}  →  /{url_slug}")
         pages_created += 1
     except Exception as e:
-        # Si ya existe, la actualizamos
-        if "already exists" in str(e):
+        if "already exists" in str(e).lower():
             existing = course.get_page(url_slug)
-            existing.edit(wiki_page={"body": body, "published": True})
+            existing.edit(wiki_page={"body": body})
             print(f"  ↻ Actualizada: {title}")
         else:
             print(f"  ✗ Error {title}: {e}")
 
-print(f"\n¡Terminado! {pages_created} páginas en tu curso Canvas")
-print(f"URL directa → {API_URL}/courses/{COURSE_ID}/pages/inicio-mkdocs")
+print(f"\n¡Listo! {pages_created} páginas subidas correctamente")
+print(f"Ve directo a: {API_URL}/courses/{COURSE_ID}/pages/inicio-mkdocs")
